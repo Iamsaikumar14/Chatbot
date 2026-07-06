@@ -42,13 +42,15 @@ chatbot = builder.compile(checkpointer=memory)
 config = {"configurable": {"thread_id": "session-1"}}
 
 if __name__ == "__main__":
-    # First query
-    initial_state = {
-        "messages": [HumanMessage(content="what is capital of India")]
-    }
+    # Test streaming
+    print("Testing streaming:")
+    for message_chunk, metadata in chatbot.stream(
+        {'messages': [HumanMessage(content='what is the recipe to make pasta')]},
+        config=config,
+        stream_mode='messages'
+    ):
+        if message_chunk.content:
+            print(message_chunk.content, end="", flush=True)
+    print("\n")
 
-    result = chatbot.invoke(initial_state, config)
-
-    # Print response
-    print("AI:", result["messages"][-1].content)
 
