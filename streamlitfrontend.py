@@ -1,6 +1,7 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.backend import chatbot, config
+from backend import chatbot, config
+
 
 # Set page title and layout
 st.set_page_config(
