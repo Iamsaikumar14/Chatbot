@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from typing import Annotated, TypedDict
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -34,3 +37,18 @@ memory = MemorySaver()
 
 # Compile the workflow
 chatbot = builder.compile(checkpointer=memory)
+
+# Conversation config with thread identifier
+config = {"configurable": {"thread_id": "session-1"}}
+
+if __name__ == "__main__":
+    # First query
+    initial_state = {
+        "messages": [HumanMessage(content="what is capital of India")]
+    }
+
+    result = chatbot.invoke(initial_state, config)
+
+    # Print response
+    print("AI:", result["messages"][-1].content)
+
