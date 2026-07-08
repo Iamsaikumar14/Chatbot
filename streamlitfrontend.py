@@ -1,7 +1,6 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
-from backend import chatbot, config
-
+from backend import chatbot, generate_thread_id
 
 # Set page title and layout
 st.set_page_config(
@@ -48,53 +47,59 @@ st.markdown("""
         backdrop-filter: blur(10px) !important;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
     }
-    
-    /* Chat message container custom styles */
-    .chat-bubble {
-        padding: 1rem 1.25rem;
-        border-radius: 16px;
-        margin-bottom: 1rem;
-        max-width: 80%;
-        line-height: 1.5;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        display: inline-block;
-    }
-    
-    .chat-bubble-user {
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white;
-        align-self: flex-end;
-        border-bottom-right-radius: 4px;
-        margin-left: auto;
-    }
-    
-    .chat-bubble-bot {
-        background-color: rgba(30, 41, 59, 0.85);
-        color: #f1f5f9;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        align-self: flex-start;
-        border-bottom-left-radius: 4px;
-        margin-right: auto;
-    }
-
-    .chat-row {
-        display: flex;
-        width: 100%;
-        margin-bottom: 0.5rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # Application header
 st.markdown("<h1>Gemini & LangGraph Chatbot</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>A stateful conversational AI built with LangGraph & Google Gemini</p>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle'>A stateful conversational AI with streaming responses</p>", unsafe_allow_html=True)
 
-# Initialize message history in streamlit session state if it doesn't exist
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Initialize session state variables
+if "threads" not in st.session_state:
+    st.session_state.threads = []
 
-# Display current message history
-for msg in st.session_state.chat_history:
+if "thread_id" not in st.session_state:
+    new_id = generate_thread_id()
+    st.session_state.thread_id = new_id
+
+# Ensure active thread_id is in the list of threads
+if not any(t["id"] == st.session_state.thread_id for t in st.session_state.threads):
+    st.session_state.threads.append({"id": st.session_state.thread_id, "title": "New Chat"})
+
+# Set up active thread configuration
+active_config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+# Sidebar UI
+st.sidebar.title('LangGraph Chatbot')
+
+# "New Chat" button
+if st.sidebar.button('➕ New Chat', use_container_width=True):
+    new_id = generate_thread_id()
+    st.session_state.thread_id = new_id
+    st.session_state.threads.append({"id": new_id, "title": "New Chat"})
+    st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.subheader('My Conversations')
+
+# Render conversations in sidebar as buttons
+for thread in st.session_state.threads:
+    # Highlight current active thread
+    is_active = (thread["id"] == st.session_state.thread_id)
+    button_label = f"💬 {thread['title']}"
+    if is_active:
+        button_label = f"👉 {thread['title']} (Active)"
+    
+    # Click to switch thread
+    if st.sidebar.button(button_label, key=thread["id"], use_container_width=True):
+        st.session_state.thread_id = thread["id"]
+        st.rerun()
+
+# Display current message history for the active thread
+state = chatbot.get_state(active_config)
+chat_history = state.values.get("messages", [])
+
+for msg in chat_history:
     if isinstance(msg, HumanMessage):
         with st.chat_message("user"):
             st.markdown(msg.content)
@@ -110,28 +115,29 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
     
-    # Add human message to local session state history
-    st.session_state.chat_history.append(HumanMessage(content=user_input))
-    
-    # 2. Invoke the compiled LangGraph chatbot
-    with st.spinner("AI is thinking..."):
+    # Update thread title in sidebar if it is currently "New Chat"
+    for thread in st.session_state.threads:
+        if thread["id"] == st.session_state.thread_id and thread["title"] == "New Chat":
+            thread["title"] = user_input[:25] + "..." if len(user_input) > 25 else user_input
+
+    # 2. Generator function to stream tokens from LangGraph chatbot
+    def stream_response(prompt):
+        # We send the new user message as a state update
+        state_update = {"messages": [HumanMessage(content=prompt)]}
+        for message_chunk, metadata in chatbot.stream(
+            state_update,
+            config=active_config,
+            stream_mode="messages"
+        ):
+            if message_chunk.content:
+                yield message_chunk.content
+
+    # 3. Stream assistant response in chat message container
+    with st.chat_message("assistant"):
         try:
-            # We send the new user message as a state update. 
-            # LangGraph checkpointer will load existing history for 'session-1' and append this new message
-            state_update = {"messages": [HumanMessage(content=user_input)]}
-            result = chatbot.invoke(state_update, config)
-            
-            # The result['messages'] contains the list of all messages in the state.
-            # Get the latest message, which is the AI response.
-            ai_response = result["messages"][-1]
-            
-            # 3. Display assistant response in chat message container
-            with st.chat_message("assistant"):
-                st.markdown(ai_response.content)
-                
-            # Add assistant message to local session state history
-            st.session_state.chat_history.append(ai_response)
-            
+            full_response = st.write_stream(stream_response(user_input))
+            # Rerun the app to refresh the state and load conversation correctly
+            st.rerun()
         except Exception as e:
             st.error(f"Error calling chatbot: {e}")
             st.info("💡 Make sure to set your GEMINI_API_KEY or GOOGLE_API_KEY in the .env file.")

@@ -1,5 +1,10 @@
 import os
 from dotenv import load_dotenv
+import uuid
+
+
+def generate_thread_id():
+    return str(uuid.uuid4())
 
 load_dotenv()
 from typing import Annotated, TypedDict
@@ -39,7 +44,8 @@ memory = MemorySaver()
 chatbot = builder.compile(checkpointer=memory)
 
 # Conversation config with thread identifier
-config = {"configurable": {"thread_id": "session-1"}}
+thread_id = "session-1"
+config = {"configurable": {"thread_id": thread_id}}
 
 if __name__ == "__main__":
     # Test streaming
