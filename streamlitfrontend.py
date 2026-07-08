@@ -134,10 +134,18 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
     
-    # Update thread title in sidebar if it is currently "New Chat"
+    # Update thread title and move the active thread to the top of the sidebar list
+    active_thread = None
     for thread in st.session_state.threads:
-        if thread["id"] == st.session_state.thread_id and thread["title"] == "New Chat":
-            thread["title"] = user_input[:25] + "..." if len(user_input) > 25 else user_input
+        if thread["id"] == st.session_state.thread_id:
+            active_thread = thread
+            if thread["title"] == "New Chat":
+                thread["title"] = user_input[:25] + "..." if len(user_input) > 25 else user_input
+            break
+
+    if active_thread:
+        st.session_state.threads = [t for t in st.session_state.threads if t["id"] != st.session_state.thread_id]
+        st.session_state.threads.insert(0, active_thread)
 
     # 2. Generator function to stream tokens from LangGraph chatbot
     def stream_response(prompt):
