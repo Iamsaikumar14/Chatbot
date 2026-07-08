@@ -62,8 +62,14 @@ if "thread_id" not in st.session_state:
     new_id = generate_thread_id()
     st.session_state.thread_id = new_id
 
-# Ensure active thread_id is in the list of threads
-if not any(t["id"] == st.session_state.thread_id for t in st.session_state.threads):
+# Ensure active thread_id is in the list of threads and at the top
+active_thread = next((t for t in st.session_state.threads if t["id"] == st.session_state.thread_id), None)
+if active_thread:
+    # Move active thread to the top (index 0)
+    st.session_state.threads = [t for t in st.session_state.threads if t["id"] != st.session_state.thread_id]
+    st.session_state.threads.insert(0, active_thread)
+else:
+    # Create and insert at the top
     st.session_state.threads.insert(0, {"id": st.session_state.thread_id, "title": "New Chat"})
 
 # Set up active thread configuration
@@ -134,18 +140,11 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
     
-    # Update thread title and move the active thread to the top of the sidebar list
-    active_thread = None
+    # Update thread title in sidebar if it is currently "New Chat"
     for thread in st.session_state.threads:
-        if thread["id"] == st.session_state.thread_id:
-            active_thread = thread
-            if thread["title"] == "New Chat":
-                thread["title"] = user_input[:25] + "..." if len(user_input) > 25 else user_input
+        if thread["id"] == st.session_state.thread_id and thread["title"] == "New Chat":
+            thread["title"] = user_input[:25] + "..." if len(user_input) > 25 else user_input
             break
-
-    if active_thread:
-        st.session_state.threads = [t for t in st.session_state.threads if t["id"] != st.session_state.thread_id]
-        st.session_state.threads.insert(0, active_thread)
 
     # 2. Generator function to stream tokens from LangGraph chatbot
     def stream_response(prompt):
