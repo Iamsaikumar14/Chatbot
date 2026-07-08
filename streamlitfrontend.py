@@ -82,8 +82,11 @@ if st.sidebar.button('➕ New Chat', use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.subheader('My Conversations')
 
-# Render conversations in sidebar as buttons
+# Render conversations in sidebar as buttons with delete option
 for thread in st.session_state.threads:
+    # Use columns to align the chat selection button and delete button
+    col1, col2 = st.sidebar.columns([5, 1])
+    
     # Highlight current active thread
     is_active = (thread["id"] == st.session_state.thread_id)
     button_label = f"💬 {thread['title']}"
@@ -91,8 +94,24 @@ for thread in st.session_state.threads:
         button_label = f"👉 {thread['title']} (Active)"
     
     # Click to switch thread
-    if st.sidebar.button(button_label, key=thread["id"], use_container_width=True):
+    if col1.button(button_label, key=f"select_{thread['id']}", use_container_width=True):
         st.session_state.thread_id = thread["id"]
+        st.rerun()
+        
+    # Click to delete thread
+    if col2.button("🗑️", key=f"delete_{thread['id']}", use_container_width=True, help="Delete this conversation"):
+        # Filter out the deleted thread
+        st.session_state.threads = [t for t in st.session_state.threads if t["id"] != thread["id"]]
+        
+        # If the deleted thread was the active one, choose a new active thread
+        if st.session_state.thread_id == thread["id"]:
+            if st.session_state.threads:
+                st.session_state.thread_id = st.session_state.threads[0]["id"]
+            else:
+                new_id = generate_thread_id()
+                st.session_state.thread_id = new_id
+                st.session_state.threads.insert(0, {"id": new_id, "title": "New Chat"})
+        
         st.rerun()
 
 # Display current message history for the active thread
