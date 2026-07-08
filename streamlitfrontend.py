@@ -64,7 +64,7 @@ if "thread_id" not in st.session_state:
 
 # Ensure active thread_id is in the list of threads
 if not any(t["id"] == st.session_state.thread_id for t in st.session_state.threads):
-    st.session_state.threads.append({"id": st.session_state.thread_id, "title": "New Chat"})
+    st.session_state.threads.insert(0, {"id": st.session_state.thread_id, "title": "New Chat"})
 
 # Set up active thread configuration
 active_config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -76,7 +76,7 @@ st.sidebar.title('LangGraph Chatbot')
 if st.sidebar.button('➕ New Chat', use_container_width=True):
     new_id = generate_thread_id()
     st.session_state.thread_id = new_id
-    st.session_state.threads.append({"id": new_id, "title": "New Chat"})
+    st.session_state.threads.insert(0, {"id": new_id, "title": "New Chat"})
     st.rerun()
 
 st.sidebar.markdown("---")
