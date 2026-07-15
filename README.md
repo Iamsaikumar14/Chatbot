@@ -1,7 +1,6 @@
 <div align="center">
 
-<img src="<img width="1201" height="318" alt="Screenshot 2026-07-15 at 10 57 50 PM" src="https://github.com/user-attachments/assets/f6f6c9de-825e-49da-9363-e107520c68e1" />
-" alt="NIT Rourkela AI Agent Assistant banner" width="100%"/>
+<img src="https://github.com/user-attachments/assets/f6f6c9de-825e-49da-9363-e107520c68e1" alt="NIT Rourkela AI Agent Assistant banner" width="100%"/>
 
 <br/>
 
