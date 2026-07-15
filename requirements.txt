@@ -1,0 +1,14 @@
+streamlit>=1.30.0
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-text-splitters
+langgraph
+langgraph-checkpoint
+langgraph-checkpoint-sqlite
+langgraph-prebuilt
+numpy
+pypdf
+python-dotenv
+google-genai
+duckduckgo_search

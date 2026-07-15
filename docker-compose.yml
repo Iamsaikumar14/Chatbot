@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  chatbot:
+    build: .
+    container_name: langgraph-chatbot
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      # Anonymous volumes to prevent container dependencies from being overridden by host mounts
+      - /app/.venv
+      - /app/__pycache__
+    restart: unless-stopped
