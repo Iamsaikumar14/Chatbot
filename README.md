@@ -42,7 +42,7 @@ Everything — chat memory, uploaded documents, and vector embeddings — is per
 <br/>
 
 <div align="center">
-<img src="assets/architecture.svg" alt="System architecture diagram" width="100%"/>
+<img src="https://github.com/user-attachments/assets/738f480a-a2b8-463f-b4c6-af544fd6e9ca" alt="System architecture diagram" width="100%"/>
 </div>
 
 <br/>
@@ -59,16 +59,6 @@ Everything — chat memory, uploaded documents, and vector embeddings — is per
 | 🛠️ **Tool-calling Agent Graph** | Built as a LangGraph `StateGraph` that routes between the chat node and a `ToolNode` automatically |
 | 🔍 **Source Transparency** | Every RAG answer shows the retrieved chunks, similarity scores, and source files/images used |
 | 🐳 **Dockerized** | Ships with a `Dockerfile` and `docker-compose.yml` for a one-command deployment |
-
-<br/>
-
-## 🖼️ Preview
-
-<div align="center">
-<img src="https://via.placeholder.com/900x520/0f172a/94a3b8?text=Add+a+screenshot+of+your+running+app+here" alt="App screenshot placeholder" width="80%"/>
-<br/>
-<sub>👉 Replace this with a real screenshot: run the app, take a screenshot, save it as <code>assets/screenshot.png</code>, and swap the line above for <code>&lt;img src="assets/screenshot.png" width="80%"/&gt;</code></sub>
-</div>
 
 <br/>
 
