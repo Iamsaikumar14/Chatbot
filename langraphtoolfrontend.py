@@ -3,6 +3,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langraphtoolbackend import chatbot, generate_thread_id, retrieve_all_threads, delete_thread
 import pypdf
 from rag_service import RAGService
+import calendar_service
 
 # Instantiate RAG service
 rag_service = RAGService()
@@ -30,6 +31,8 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
+
+
 
 # Custom premium CSS styling for the chat interface
 st.markdown("""
@@ -246,6 +249,82 @@ if indexed_docs:
             st.rerun()
 else:
     st.sidebar.info("No documents uploaded yet.")
+# --- Google Calendar Sidebar Integration ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📅 Google Calendar")
+
+if calendar_service.is_connected():
+    st.sidebar.success("🟢 Connected")
+    
+    # Disconnect action
+    if st.sidebar.button("🔌 Disconnect Calendar", use_container_width=True):
+        calendar_service.disconnect()
+        st.toast("Disconnected Google Calendar.")
+        st.rerun()
+        
+    # Render upcoming events directly in sidebar
+    st.sidebar.markdown("**Upcoming Events:**")
+    events = calendar_service.list_events(max_results=5)
+    if isinstance(events, list) and events:
+        from datetime import datetime
+        for ev in events:
+            summary = ev.get('summary', 'Untitled Event')
+            start = ev.get('start', {}).get('dateTime') or ev.get('start', {}).get('date')
+            try:
+                dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                time_str = dt.strftime("%b %d, %I:%M %p")
+            except Exception:
+                time_str = start
+                
+            st.sidebar.markdown(f"**{summary}**\n*{time_str}*")
+            st.sidebar.markdown("---")
+    elif isinstance(events, list):
+        st.sidebar.info("No upcoming events found.")
+    else:
+        st.sidebar.error("Error loading events.")
+else:
+    st.sidebar.error("🔴 Disconnected")
+    
+    # Credentials setup expander
+    with st.sidebar.expander("🔑 Setup Credentials", expanded=not calendar_service.has_client_credentials()):
+        st.markdown(
+            "To connect your Google Calendar, paste your OAuth Web Application Client Credentials below. "
+            "Make sure your Redirect URI in the Google Cloud Console is set to `http://localhost:8501/`."
+        )
+        
+        # Upload credentials.json or manually enter credentials
+        uploaded_creds = st.file_uploader("Upload credentials.json", type=["json"], key="creds_uploader")
+        if uploaded_creds:
+            try:
+                import json
+                creds_data = json.load(uploaded_creds)
+                with open(calendar_service.CREDENTIALS_PATH, 'w') as f:
+                    json.dump(creds_data, f, indent=4)
+                st.success("credentials.json saved!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error parsing file: {e}")
+                
+        st.markdown("Or enter details manually:")
+        client_id = st.text_input("Client ID", type="password")
+        client_secret = st.text_input("Client Secret", type="password")
+        
+        if st.button("Save Credentials", use_container_width=True):
+            if client_id and client_secret:
+                calendar_service.save_client_credentials(client_id, client_secret)
+                st.success("Credentials saved!")
+                st.rerun()
+            else:
+                st.warning("Please fill in both fields.")
+                
+    # If credentials exist, show authorize button
+    if st.sidebar.button("🔗 Connect Google Calendar", use_container_width=True):
+        try:
+            calendar_service.connect_google_calendar()
+            st.success("Google Calendar Connected!")
+            st.rerun()
+        except Exception as e:
+            st.error(str(e))
 
 # Display current message history for the active thread
 state = chatbot.get_state(active_config)
