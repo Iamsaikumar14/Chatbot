@@ -2,3 +2,13 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+
+# Google Calendar OAuth secrets — never commit these
+credentials.json
+token.json
+ 
+# Local runtime databases (auto-created, per-user state)
+*.db
+*.db-shm
+*.db-wal
