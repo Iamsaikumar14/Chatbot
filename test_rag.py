@@ -119,8 +119,73 @@ def run_test():
         if doc['filename'] == test_image_filename:
             print("FAIL: Image document was not deleted successfully!")
             sys.exit(1)
-            
-    print("SUCCESS: All RAG service tests passed successfully!")
+    # Test feedback loop reweighting and flagging
+    print("\nTesting feedback loop reweighting and flagging...")
+    fb_filename = "test_feedback_doc.txt"
+    fb_content = "The capital of NIT Rourkela is Sector 1."
+    rag.add_document(fb_filename, fb_content)
+    
+    # Query initially
+    initial_results = rag.query_documents("Sector 1", limit=1)
+    if not initial_results:
+        print("FAIL: Feedback test document not returned on initial search!")
+        sys.exit(1)
+    initial_score = initial_results[0]["similarity"]
+    print(f"Initial similarity score: {initial_score:.4f}")
+    
+    # Log 1 thumbs down (feedback_value = -1)
+    print("Adding 1 negative feedback (thumbs down)...")
+    rag.add_feedback("Sector 1", fb_filename, initial_results[0]["content"], -1)
+    
+    # Query and check score penalty
+    penalized_results = rag.query_documents("Sector 1", limit=1)
+    if not penalized_results:
+        print("FAIL: Document not returned after single penalty!")
+        sys.exit(1)
+    penalized_score = penalized_results[0]["similarity"]
+    print(f"Penalized similarity score: {penalized_score:.4f}")
+    if penalized_score >= initial_score:
+        print("FAIL: Similarity score did not decrease after negative feedback!")
+        sys.exit(1)
+        
+    # Log 2 more thumbs down (total -3, should trigger exclusion)
+    print("Adding 2 more negative feedbacks (total 3 thumbs down)...")
+    rag.add_feedback("Sector 1", fb_filename, initial_results[0]["content"], -1)
+    rag.add_feedback("Sector 1", fb_filename, initial_results[0]["content"], -1)
+    
+    # Query and verify exclusion
+    excluded_results = rag.query_documents("Sector 1", limit=1)
+    if excluded_results and any(r["filename"] == fb_filename for r in excluded_results):
+        print("FAIL: Document was not excluded/flagged after 3 thumbs down!")
+        sys.exit(1)
+    print("Document successfully excluded after 3 thumbs down.")
+    
+    # Log positive feedback to override
+    print("Adding 4 positive feedbacks (thumbs up)...")
+    for _ in range(4):
+        rag.add_feedback("Sector 1", fb_filename, initial_results[0]["content"], 1)
+        
+    # Query and verify boost
+    boosted_results = rag.query_documents("Sector 1", limit=1)
+    if not boosted_results:
+        print("FAIL: Document not returned after positive feedback boost override!")
+        sys.exit(1)
+    boosted_score = boosted_results[0]["similarity"]
+    print(f"Boosted similarity score: {boosted_score:.4f}")
+    if boosted_score <= initial_score:
+        print("FAIL: Similarity score did not increase after positive feedback!")
+        sys.exit(1)
+        
+    # Clean up test feedback records
+    conn, _ = rag.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rag_feedback WHERE filename = ?", (fb_filename,))
+    conn.commit()
+    conn.close()
+    
+    rag.delete_document(fb_filename)
+    
+    print("\nSUCCESS: All RAG service tests passed successfully!")
 
 if __name__ == "__main__":
     run_test()

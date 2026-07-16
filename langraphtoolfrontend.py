@@ -1,5 +1,6 @@
 import streamlit as st
-from langchain_core.messages import HumanMessage, AIMessage
+import json
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langraphtoolbackend import chatbot, generate_thread_id, retrieve_all_threads, delete_thread
 import pypdf
 from rag_service import RAGService
@@ -326,18 +327,140 @@ else:
         except Exception as e:
             st.error(str(e))
 
+# Handle Human-in-the-Loop Resume/Reject actions
+if st.session_state.get("action") == "approve":
+    st.session_state.action = None
+    with st.chat_message("assistant"):
+        try:
+            # Resume stream by passing None as state update
+            def resume_stream():
+                for message_chunk, metadata in chatbot.stream(
+                    None,
+                    config=active_config,
+                    stream_mode="messages"
+                ):
+                    if message_chunk.content:
+                        clean_chunk = extract_text_from_content(message_chunk.content)
+                        if clean_chunk:
+                            yield clean_chunk
+            st.write_stream(resume_stream())
+            # Save retrieved sources if any
+            if "retrieved_sources" in st.session_state:
+                st.session_state.last_retrieved_sources = st.session_state.retrieved_sources
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error resuming chatbot: {e}")
+
+elif st.session_state.get("action") == "reject":
+    st.session_state.action = None
+    state = chatbot.get_state(active_config)
+    chat_history = state.values.get("messages", [])
+    last_msg = chat_history[-1] if chat_history else None
+    
+    if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        reject_messages = []
+        for tc in last_msg.tool_calls:
+            reject_messages.append(ToolMessage(
+                content="Permission denied by user. Do not attempt this action again.",
+                name=tc["name"],
+                tool_call_id=tc["id"]
+            ))
+        
+        # Inject the rejected ToolMessages and specify we are writing as the 'tools' node output
+        chatbot.update_state(active_config, {"messages": reject_messages}, as_node="tools")
+        
+        with st.chat_message("assistant"):
+            try:
+                # Resume execution with rejection injected
+                def resume_stream_rejected():
+                    for message_chunk, metadata in chatbot.stream(
+                        None,
+                        config=active_config,
+                        stream_mode="messages"
+                    ):
+                        if message_chunk.content:
+                            clean_chunk = extract_text_from_content(message_chunk.content)
+                            if clean_chunk:
+                                yield clean_chunk
+                st.write_stream(resume_stream_rejected())
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error resuming chatbot: {e}")
+
 # Display current message history for the active thread
 state = chatbot.get_state(active_config)
 chat_history = state.values.get("messages", [])
 
-for msg in chat_history:
+for idx, msg in enumerate(chat_history):
     clean_content = extract_text_from_content(msg.content)
+    # Skip rendering empty tool calls or checkpointer state summaries to keep chat clean
+    if not clean_content.strip() and not isinstance(msg, HumanMessage):
+        continue
+        
     if isinstance(msg, HumanMessage):
         with st.chat_message("user"):
             st.markdown(clean_content)
     elif isinstance(msg, AIMessage):
         with st.chat_message("assistant"):
             st.markdown(clean_content)
+            
+            # Show thumbs up/down feedback widget under the last assistant response
+            if idx == len(chat_history) - 1:
+                # We use the thread ID and message history length to construct a unique state key
+                feedback = st.feedback("thumbs", key=f"fb_{st.session_state.thread_id}_{len(chat_history)}")
+                if feedback is not None:
+                    # Streamlit feedback returns 0 for thumbs down, 1 for thumbs up
+                    val = 1 if feedback == 1 else -1
+                    
+                    # Locate the preceding human user question to log
+                    last_query = ""
+                    for m in reversed(chat_history[:idx]):
+                        if isinstance(m, HumanMessage):
+                            last_query = extract_text_from_content(m.content)
+                            break
+                            
+                    if st.session_state.get("last_retrieved_sources"):
+                        for src in st.session_state.last_retrieved_sources:
+                            rag_service.add_feedback(
+                                query=last_query,
+                                filename=src["filename"],
+                                chunk_content=src["content"],
+                                feedback_value=val
+                            )
+                        if val == 1:
+                            st.toast("👍 Thank you for your feedback! The RAG system will boost these sources.")
+                        else:
+                            st.toast("👎 Thank you for your feedback! The RAG system will penalize or flag these sources.")
+
+# 1. Matched tool-call tracing/logging UI
+tool_traces = []
+for idx, msg in enumerate(chat_history):
+    if isinstance(msg, AIMessage) and msg.tool_calls:
+        for tc in msg.tool_calls:
+            # Find matching ToolMessage in subsequent messages
+            result_content = "Running..."
+            for next_msg in chat_history[idx+1:]:
+                if isinstance(next_msg, ToolMessage) and next_msg.tool_call_id == tc["id"]:
+                    result_content = next_msg.content
+                    break
+            tool_traces.append({
+                "name": tc["name"],
+                "args": tc["args"],
+                "result": result_content
+            })
+            
+if tool_traces:
+    with st.expander("🔧 Agent Reasoning & Tool Calls", expanded=False):
+        for trace in tool_traces:
+            st.markdown(f"🤖 **Tool Executed:** `{trace['name']}`")
+            st.markdown("**Arguments:**")
+            st.json(trace["args"])
+            st.markdown("**Result:**")
+            if "INSUFFICIENT" in trace["result"] or "Web Search Results" in trace["result"]:
+                st.markdown(trace["result"])
+            else:
+                st.code(trace["result"])
+            st.markdown("---")
 
 # Render last retrieved sources (including transcribed tables or diagrams)
 if st.session_state.get("last_retrieved_sources"):
@@ -348,6 +471,25 @@ if st.session_state.get("last_retrieved_sources"):
             if src.get("image_data"):
                 st.image(src["image_data"], caption=src["filename"], use_container_width=True)
             st.markdown("---")
+
+# 2. Human-in-the-Loop approval/rejection panel
+if state.next and "tools" in state.next:
+    last_msg = chat_history[-1] if chat_history else None
+    if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        st.warning("⚠️ **Human-in-the-Loop: Action Requires Approval**")
+        st.markdown("The agent is requesting permission to execute the following tool call(s):")
+        for tc in last_msg.tool_calls:
+            st.markdown(f"👉 **Tool Name:** `{tc['name']}`")
+            st.json(tc['args'])
+            
+        col_app, col_rej = st.columns(2)
+        if col_app.button("✅ Approve & Execute", use_container_width=True):
+            st.session_state.action = "approve"
+            st.rerun()
+            
+        if col_rej.button("❌ Reject & Deny", use_container_width=True):
+            st.session_state.action = "reject"
+            st.rerun()
 
 # Prompt input
 user_input = st.chat_input("Ask a question...")
