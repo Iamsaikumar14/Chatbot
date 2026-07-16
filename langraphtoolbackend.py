@@ -2,9 +2,6 @@ import sqlite3
 import os
 from dotenv import load_dotenv
 import uuid
-from langchain_core.messages import SystemMessage
-from datetime import datetime
-
 
 
 def generate_thread_id():
@@ -27,7 +24,6 @@ class ChatState(TypedDict):
 
 from langchain_core.tools import tool
 from rag_service import RAGService
-import calendar_service
 
 # Instantiate RAG service
 rag_service = RAGService()
@@ -68,80 +64,18 @@ def search_documents(query: str) -> str:
     return "\n\n---\n\n".join(formatted_results)
 
 # Define tools
-@tool
-def list_calendar_events(max_results: int = 10, time_min: str = None, time_max: str = None) -> str:
-    """List upcoming events from the user's Google Calendar.
-    - time_min: ISO 8601 string (e.g., '2026-07-16T00:00:00+05:30'). Defaults to current time if not provided.
-    - time_max: Optional ISO 8601 string to restrict the end time.
-    """
-    if not calendar_service.is_connected():
-        return "Error: Google Calendar is not connected. Suggest that the user connect it in the sidebar settings."
-    
-    events = calendar_service.list_events(max_results=max_results, time_min=time_min, time_max=time_max)
-    if isinstance(events, str):
-        return events
-    if not events:
-        return "No upcoming events found."
-        
-    lines = []
-    for ev in events:
-        start = ev.get('start', {}).get('dateTime') or ev.get('start', {}).get('date')
-        end = ev.get('end', {}).get('dateTime') or ev.get('end', {}).get('date')
-        lines.append(f"- **{ev.get('summary')}**\n  ID: {ev.get('id')}\n  Start: {start}\n  End: {end}\n  Description: {ev.get('description', 'N/A')}")
-    return "\n".join(lines)
-
-@tool
-def create_calendar_event(summary: str, start_time: str, end_time: str, description: str = None, location: str = None) -> str:
-    """Create a new event in the Google Calendar.
-    - summary: Title of the event.
-    - start_time: ISO 8601 formatted datetime string (e.g. '2026-07-16T15:00:00+05:30').
-    - end_time: ISO 8601 formatted datetime string.
-    - description: Optional details.
-    - location: Optional location.
-    """
-    if not calendar_service.is_connected():
-        return "Error: Google Calendar is not connected. Suggest that the user connect it in the sidebar settings."
-    return calendar_service.create_event(summary, start_time, end_time, description, location)
-
-@tool
-def delete_calendar_event(event_id: str) -> str:
-    """Delete an event from Google Calendar using its event_id."""
-    if not calendar_service.is_connected():
-        return "Error: Google Calendar is not connected. Suggest that the user connect it in the sidebar."
-    return calendar_service.delete_event(event_id)
-
-@tool
-def update_calendar_event(event_id: str, summary: str = None, start_time: str = None, end_time: str = None, description: str = None, location: str = None) -> str:
-    """Update details of an existing event in Google Calendar.
-    Provide only the parameters that need to be modified.
-    """
-    if not calendar_service.is_connected():
-        return "Error: Google Calendar is not connected. Suggest that the user connect it in the sidebar."
-    return calendar_service.update_event(event_id, summary, start_time, end_time, description, location)
 search_tool = DuckDuckGoSearchRun()
-tools = [search_tool, search_documents, list_calendar_events,
-    create_calendar_event,
-    delete_calendar_event,
-    update_calendar_event]
+tools = [search_tool, search_documents]
 
 # Initialize the Google Gemini model and bind tools
-llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 llm_with_tools = llm.bind_tools(tools)
 
 def chatnode(state: ChatState):
-    # Prepend system prompt containing current datetime in local time (IST)
-    current_time_str = datetime.now().strftime("%A, %B %d, %Y, %I:%M %p")
-    system_prompt = f"""You are a helpful AI Assistant for NIT Rourkela.
-The current date and time is: {current_time_str}. The timezone is Indian Standard Time (IST, UTC+05:30).
-You have tools to search documents, search the web, and manage the user's Google Calendar.
-When the user asks you to manage their calendar (list, create, update, or delete events), call the corresponding calendar tool.
-If a calendar operation fails because it is not connected, politely guide the user to connect it using the settings panel in the sidebar.
-Always format start and end times in ISO 8601 format with the appropriate local timezone offset (+05:30).
-"""
-    messages = [SystemMessage(content=system_prompt)] + state["messages"]
-    response = llm_with_tools.invoke(messages)
+    # Call LLM with the list of previous messages and tools
+    response = llm_with_tools.invoke(state["messages"])
+    # Return the response to update graph state
     return {"messages": [response]}
-
 
 builder = StateGraph(ChatState)
 
