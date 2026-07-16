@@ -11,4 +11,4 @@ numpy
 pypdf
 python-dotenv
 google-genai
-duckduckgo_search
+ddgs
